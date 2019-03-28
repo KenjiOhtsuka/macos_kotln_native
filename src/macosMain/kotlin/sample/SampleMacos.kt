@@ -24,7 +24,7 @@ fun main(args: Array<String>) {
 
 object WebGateway {
     fun get(urlString: String): String {
-        return return HttpDelegate.get(urlString)
+        return HttpDelegate.get(urlString)
     }
 
     object HttpDelegate: NSObject(), NSURLSessionDataDelegateProtocol {
