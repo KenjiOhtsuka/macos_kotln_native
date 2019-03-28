@@ -3,46 +3,68 @@ package sample
 import platform.Foundation.*
 import platform.darwin.*
 import platform.posix.sleep
+import kotlinx.cinterop.autoreleasepool
+import platform.AppKit.*
+import platform.Foundation.*
+import platform.objc.*
+import platform.osx.*
+import kotlin.native.concurrent.MutableData
+import kotlin.native.concurrent.freeze
+
 
 fun main(args: Array<String>) {
-    println(WebGateway.get("https://www.google.com/"))
+    autoreleasepool {
+        val app = NSApplication.sharedApplication()
+        app.delegate = MyAppDelegate()
+        app.setActivationPolicy(NSApplicationActivationPolicy.NSApplicationActivationPolicyRegular)
+        app.activateIgnoringOtherApps(true)
+        app.run()
+    }
 }
 
 object WebGateway {
     fun get(urlString: String): String {
-        val semaphore = dispatch_semaphore_create(0)
-
-        val components = NSURLComponents(urlString)
-        //compnents?.queryItems = queryItems
-        val url = components.URL
-        var result: String = ""
-        val config = NSURLSessionConfiguration.defaultSessionConfiguration()
-        config.waitsForConnectivity = true
-        config.timeoutIntervalForResource = 300.0
-
-        val request = NSURLRequest.requestWithURL(url!!)
-        val session = NSURLSession.sessionWithConfiguration(
-            config, null, NSOperationQueue.mainQueue()
-        )
-
-        //val session = NSURLSession.sharedSession
-        println(urlString)
-        val task =
-            session.dataTaskWithRequest(request) { nsData: NSData?, nsurlResponse: NSURLResponse?, nsError: NSError? ->
-                nsData?.run { result = toString() }
-                println(nsData)
-                dispatch_semaphore_signal(semaphore);
-            }
-
-        task.resume()
-        session.finishTasksAndInvalidate()
-        NSOperationQueue.mainQueue().waitUntilAllOperationsAreFinished()
-        dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER)
-        //session.finishTasksAndInvalidate()
-        return result
+        return return HttpDelegate.get(urlString)
     }
 
-    fun post(url: String): String {
-        TODO("not implemented")
+    object HttpDelegate: NSObject(), NSURLSessionDataDelegateProtocol {
+        private val queue = NSOperationQueue.mainQueue()
+        private val receivedData = MutableData()
+
+        init {
+            freeze()
+        }
+
+        fun fetchUrl(url: String) {
+            receivedData.reset()
+            val session = NSURLSession.sessionWithConfiguration(
+                NSURLSessionConfiguration.defaultSessionConfiguration(),
+                this,
+                delegateQueue = queue
+            )
+            session.dataTaskWithURL(NSURL(string = url)).resume()
+        }
+
+        fun get(urlString: String): String {
+            receivedData.reset()
+            val session = NSURLSession.sessionWithConfiguration(
+                NSURLSessionConfiguration.defaultSessionConfiguration(),
+                this,
+                delegateQueue = NSOperationQueue.mainQueue()
+            )
+            val request = NSURLRequest.requestWithURL(NSURL(string = urlString))
+            var resultString = ""
+            session.dataTaskWithRequest(request) { nsData: NSData?, nsurlResponse: NSURLResponse?, nsError: NSError? ->
+                resultString = nsurlResponse.toString()
+            } .resume()
+            queue.waitUntilAllOperationsAreFinished()
+            return resultString
+        }
+    }
+}
+
+private class MyAppDelegate() : NSObject(), NSApplicationDelegateProtocol {
+    init {
+        println(WebGateway.get("https://www.google.com/"))
     }
 }
